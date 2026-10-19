@@ -70,12 +70,18 @@ public sealed class FrmKhachThue : Form
         AddField(fields, 6, "Phường/Xã", cboPhuongXa);
         fields.Controls.Add(chkTamTru, 0, 7); fields.SetColumnSpan(chkTamTru, 2);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, FlowDirection = FlowDirection.LeftToRight };
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty, Padding = Padding.Empty };
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var add = MakeButton("Thêm", async () => await SaveAsync(false));
         var edit = MakeButton("Sửa", async () => await SaveAsync(true));
         var delete = MakeButton("Xóa", async () => await DeleteAsync());
         var clear = MakeButton("Làm mới", () => { ClearForm(); return Task.CompletedTask; });
-        foreach (var b in new[] { add, edit, delete, clear }) { b.Width = 76; buttons.Controls.Add(b); }
+        foreach (var b in new[] { add, edit, delete, clear }) { b.Dock = DockStyle.Fill; b.Margin = new Padding(2); }
+        buttons.Controls.Add(add, 0, 0); buttons.Controls.Add(edit, 1, 0); buttons.Controls.Add(delete, 2, 0); buttons.Controls.Add(clear, 3, 0);
         fields.Controls.Add(buttons, 0, 9); fields.SetColumnSpan(buttons, 2);
 
         var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(12, 0, 0, 0) };
@@ -151,9 +157,59 @@ public sealed class FrmKhachThue : Form
 
     private async Task LoadInitialAsync()
     {
-        await LoadRoomsAsync();
-        await LoadGridAsync();
+        while (true)
+        {
+            try
+            {
+                await InitializeDatabaseAsync();
+                await LoadRoomsAsync();
+                await LoadGridAsync();
+                break;
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Không khởi tạo hoặc tải được dữ liệu khách thuê");
+                var detail = ex.GetBaseException().Message;
+                var result = MessageBox.Show(this,
+                    $"Không tải được dữ liệu nhà trọ. Kiểm tra SQL Server LocalDB và cơ sở dữ liệu QL_NhaTro.\n\nChi tiết: {detail}\n\nChọn Retry để thử lại hoặc Cancel để tiếp tục mở form.",
+                    "Lỗi cơ sở dữ liệu", MessageBoxButtons.RetryCancel, MessageBoxIcon.Warning);
+                if (result != DialogResult.Retry)
+                {
+                    status.Text = "Chưa kết nối được cơ sở dữ liệu QL_NhaTro";
+                    return;
+                }
+            }
+        }
         await LoadProvincesAsync();
+    }
+
+    private async Task InitializeDatabaseAsync()
+    {
+        await using var db = new QLNhaTroContext(_dbOptions);
+        // Allows the coursework project to start on a fresh LocalDB; the SQL script remains the Database First source.
+        await db.Database.EnsureCreatedAsync();
+        if (!await db.PhongTros.AnyAsync())
+        {
+            db.PhongTros.AddRange(
+                new PhongTro { TenPhong = "P01", GiaThue = 1500000, TinhTrang = "Trống" },
+                new PhongTro { TenPhong = "P02", GiaThue = 1600000, TinhTrang = "Trống" },
+                new PhongTro { TenPhong = "P03", GiaThue = 1800000, TinhTrang = "Trống" },
+                new PhongTro { TenPhong = "P04", GiaThue = 2000000, TinhTrang = "Trống" },
+                new PhongTro { TenPhong = "P05", GiaThue = 1700000, TinhTrang = "Trống" },
+                new PhongTro { TenPhong = "P06", GiaThue = 2200000, TinhTrang = "Trống" });
+            await db.SaveChangesAsync();
+        }
+        if (!await db.KhachThues.AnyAsync())
+        {
+            db.KhachThues.AddRange(
+                new KhachThue { HoTen = "Nguyễn Văn An", GioiTinh = "Nam", NgaySinh = new DateTime(2004, 5, 12), SoDienThoai = "0912345678", MaTinh = 1, TenTinh = "Thành phố Hà Nội", MaPhuongXa = 1, TenPhuongXa = "Phường Ba Đình", DaDangKyTamTru = true, MaPhong = 3 },
+                new KhachThue { HoTen = "Trần Thị Bình", GioiTinh = "Nữ", NgaySinh = new DateTime(2002, 9, 18), SoDienThoai = "0876543210", MaTinh = 1, TenTinh = "Thành phố Hà Nội", MaPhuongXa = 2, TenPhuongXa = "Phường Ngọc Hà", DaDangKyTamTru = false, MaPhong = 1 },
+                new KhachThue { HoTen = "Lê Văn Cường", GioiTinh = "Nam", NgaySinh = new DateTime(2001, 3, 21), SoDienThoai = "0901234567", MaTinh = 38, TenTinh = "Tỉnh Thanh Hóa", TenPhuongXa = "Phường Đông Sơn", DaDangKyTamTru = false, MaPhong = 2 },
+                new KhachThue { HoTen = "Phạm Minh Đức", GioiTinh = "Nam", NgaySinh = new DateTime(1999, 11, 2), SoDienThoai = "0987654321", MaTinh = 1, TenTinh = "Thành phố Hà Nội", MaPhuongXa = 3, TenPhuongXa = "Phường Giảng Võ", DaDangKyTamTru = true, MaPhong = 4 });
+            await db.SaveChangesAsync();
+        }
+        await UpdateRoomStatesAsync(db);
+        await db.SaveChangesAsync();
     }
 
     private async Task LoadRoomsAsync()
@@ -332,7 +388,7 @@ public sealed class FrmKhachThue : Form
     private async Task HandleErrorAsync(Exception ex)
     {
         _log.Error(ex, "Thao tác thất bại");
-        MessageBox.Show(this, "Đã xảy ra lỗi, thông tin đã được ghi lại", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        MessageBox.Show(this, $"Thao tác không thành công. Chi tiết đã được ghi vào Logs.\n\nLỗi: {ex.GetBaseException().Message}", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         await Task.CompletedTask;
     }
 

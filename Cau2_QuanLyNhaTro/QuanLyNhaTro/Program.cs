@@ -35,7 +35,10 @@ internal static class Program
             var connection = config.GetConnectionString("NhaTro")
                 ?? throw new InvalidOperationException("Thiếu ConnectionStrings:NhaTro trong appsettings.json.");
             var options = new DbContextOptionsBuilder<QLNhaTroContext>()
-                .UseSqlServer(connection).Options;
+                .UseSqlServer(connection, sql => sql.EnableRetryOnFailure(
+                    maxRetryCount: 5,
+                    maxRetryDelay: TimeSpan.FromSeconds(10),
+                    errorNumbersToAdd: null)).Options;
             var http = new HttpClient { BaseAddress = new Uri("https://provinces.open-api.vn/"), Timeout = TimeSpan.FromSeconds(10) };
             Application.Run(new FrmKhachThue(options, new ProvinceApiClient(http)));
         }
